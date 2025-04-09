@@ -109,11 +109,11 @@ class ProcesamientoDatos:
     
     def conversionLabelEncodingLibros(self):
         equivalenciasLibros = {
-            "26-100"        : 1,
-            "0-10"          : 2, 
-            "201-500"       : 3,     
-            "11-25"         : 4,   
-            "101-200"       : 5, 
+            "0-10"          : 0,
+            "11-25"         : 1,
+            "26-100"        : 2,
+            "101-200"       : 3, 
+            "201-500"       : 4,     
             "more than 500" : 6
         }
         self.df['book'] = self.df['book'].replace(equivalenciasLibros).astype('int')
@@ -190,6 +190,8 @@ class ProcesamientoDatos:
     
     def procesamiento(self):
         self.procesarArchivoDataFrame()
+        #self.mostrarValoresUnicos()
+        #self.muestraValoresFaltantes()
         self.renombrarIndiceAlumno()
         self.valorFaltanteComputadora()
         self.conversionBinariaComputadora()
@@ -208,6 +210,8 @@ class ProcesamientoDatos:
         self.equivalenciaEducacionPadres()
         self.conversionBinariaGenero()
         self.renombrarEncabezado()
+        #self.muestraValoresFaltantes()
+        #self.mostrarValoresUnicos()
         self.guardarDatosProcesados()
 
         #self.mostrarValoresUnicos()
