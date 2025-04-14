@@ -131,15 +131,15 @@ class ProcesamientoDatos:
 
     def equivalenciaEducacionPadres(self):
         equivalenciasISCED = {
-            "less than ISCED1"  : 1,        # Menor que la educacion Primaria
-            "ISCED 1"           : 2,        # Educacion Primaria   
-            "ISCED 2"           : 3,        # Educacion Secundaria
-            "ISCED 3A"          : 4,        # Bachillerato
-            "ISCED 3B, C"       : 5         # Bachillerato Técnico
+            "less than ISCED1"  : "menos que primaria",         # Menor que la educacion Primaria
+            "ISCED 1"           : "primaria",                   # Educacion Primaria   
+            "ISCED 2"           : "secundaria",                 # Educacion Secundaria
+            "ISCED 3A"          : "bachillerato",               # Bachillerato
+            "ISCED 3B, C"       : "bachillerato tecnico"        # Bachillerato Técnico
         }
 
-        self.df.loc[(self.df['mother_educ'].isna()) | (self.df['mother_educ'] == 'NaN') | (self.df['mother_educ'] == 'NA'), 'mother_educ'] = 0
-        self.df.loc[(self.df['father_educ'].isna()) | (self.df['father_educ'] == 'NaN') | (self.df['father_educ'] == 'NA'), 'father_educ'] = 0
+        self.df.loc[(self.df['mother_educ'].isna()) | (self.df['mother_educ'] == 'NaN') | (self.df['mother_educ'] == 'NA'), 'mother_educ'] = "sin informacion"
+        self.df.loc[(self.df['father_educ'].isna()) | (self.df['father_educ'] == 'NaN') | (self.df['father_educ'] == 'NA'), 'father_educ'] = "sin informacion"
 
         self.df['mother_educ'] = self.df['mother_educ'].replace(equivalenciasISCED).infer_objects(copy=True)
         self.df['father_educ'] = self.df['father_educ'].replace(equivalenciasISCED).infer_objects(copy=True)
