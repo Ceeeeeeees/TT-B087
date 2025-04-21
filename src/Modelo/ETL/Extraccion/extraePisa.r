@@ -1,6 +1,6 @@
 #' @title Extracción de datos PISA 2022 para México
 #' @description
-#' Este script extrae, filtra y guarda los datos de estudiantes mexicanos 
+#' Este script extrae, filtra y guarda los datos de estudiantes mexicanos
 #' del estudio PISA (Programme for International Student Assessment) 2022.
 #' 
 #' @details
@@ -18,7 +18,7 @@
 #' 
 #' @author CES
 #' @date Generado el: `r format(Sys.Date(), "%d-%m-%Y")`
-library(dplyr)  # Cargar dplyr para la manipulación de datos
+#library(dplyr)  # Cargar dplyr para la manipulación de datos
 library(learningtower)  # Paquete para acceder a datos de PISA, publicado en Comprehensive R Archive Network (CRAN)
 
 school_mexico <- school %>% filter(country == "MEX", year == 2022)

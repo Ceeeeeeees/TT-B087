@@ -2,8 +2,8 @@ library(dplyr)
 library(learningtower)      # Paquete en CRAN para acceder a datos de PISA
 
 # Extracción de datos de estudiantes para el año 2022
-alumnos2022 <- load_student("2022") 
-alumnosMexico2022 <- alumnos2022 %>% filter(country == "MEX") # Filtrar datos para México
+alumnos2022 <- load_student("2022")
+alumnosMexico2022 <- alumnos2022 %>% filter(country == "MEX")# Filtrar datos para México
 
 write.csv(alumnosMexico2022, "alumnosMexico2022.csv", row.names = FALSE) # Guardar datos en un archivo CSV
 
@@ -22,9 +22,3 @@ max_scores <- alumnosMexico2022 %>%
 
 
     print(max_scores)
-
-# Promedio de calificaciones de matematicas
-
-
-
-
