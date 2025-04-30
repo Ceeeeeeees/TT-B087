@@ -1,5 +1,5 @@
 from flask import Flask, Blueprint, request, jsonify
-from src.Modelo.Prediccion import RealizarPrediccion
+from src.Modelo.Prediccion.ModeloML import RealizarPrediccion
 from src.Controlador.Utils.validacion import validarDatosEstudiante
 
 pred_bp = Blueprint('prediccion', __name__)
