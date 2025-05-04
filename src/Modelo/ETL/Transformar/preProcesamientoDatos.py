@@ -556,8 +556,8 @@ class ProcesamientoDatos:
                     print(f"No hay puntos de corte definidos para '{variable}'")
         
         elif metodo == 'percentiles':
-            quintiles = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
-            etiquetas = ['Muy bajo', 'Bajo', 'Medio', 'Alto', 'Muy alto']
+            quintiles = [0, 0.33, 0.66, 1]
+            etiquetas = ['Bajo', 'Medio', 'Alto']
 
             for variable in variablesMaterias:
                 puntosCorte = [df[variable].quantile(q) for q in quintiles]
@@ -575,13 +575,13 @@ class ProcesamientoDatos:
                     )
                     
         elif metodo == 'intervalosIguales':
-            etiquetas = ['Muy bajo', 'Bajo', 'Medio', 'Alto', 'Muy alto']
+            etiquetas = ['Bajo', 'Medio', 'Alto']
 
             for variable in variablesMaterias:
                 minValor = df[variable].min()
                 maxValor = df[variable].max()
 
-                puntosCorte = np.linspace(minValor, maxValor, 6)
+                puntosCorte = np.linspace(minValor, maxValor, 4) #Dividir en 3 intervalos iguales
 
                 df[f'{variable}Categoria'] = pd.cut(
                     df[variable], 
@@ -613,12 +613,12 @@ class ProcesamientoDatos:
             return df
             
         columnaCategoria = "indice_socioeconomicoCategoria"
-        etiquetasIndice = ['Muy bajo', 'Bajo', 'Medio', 'Alto', 'Muy alto']
+        etiquetasIndice = ['Bajo', 'Medio', 'Alto']
 
         minValor = df['indice_socioeconomico'].min()
         maxValor = df['indice_socioeconomico'].max()
 
-        puntosCorte = np.linspace(minValor, maxValor, 6)
+        puntosCorte = np.linspace(minValor, maxValor, 4)
 
         df[columnaCategoria] = pd.cut(
             df['indice_socioeconomico'], 
@@ -653,11 +653,11 @@ class ProcesamientoDatos:
         # Creamos la columna de rendimiento general como promedio de las materias
         df['rendimiento_general'] = df[variablesMaterias].mean(axis=1)
         
-        etiquetas = ['Muy bajo', 'Bajo', 'Medio', 'Alto', 'Muy alto']
+        etiquetas = ['Bajo', 'Medio', 'Alto']
         
         minValor = df['rendimiento_general'].min()
         maxValor = df['rendimiento_general'].max()
-        puntosCorte = np.linspace(minValor, maxValor, 6)
+        puntosCorte = np.linspace(minValor, maxValor, 4)
         
         df['rendimiento_general_categoria'] = pd.cut(
             df['rendimiento_general'], 

@@ -3,10 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
+from sklearn.naive_bayes import GaussianNB
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-from sklearn.preprocessing import StandardScaler
 import joblib
 
 class ModeloPredictivo:
@@ -129,7 +129,7 @@ class ModeloPredictivo:
         return correlacion
     
     def preparar_datos_clasificacion(self, variable_objetivo='rendimiento_general_categoria', 
-                                  test_size=0.25, random_state=42):
+                                  test_size=0.30, random_state=0):
         """
         Prepara los datos para un modelo de clasificación.
         
@@ -196,12 +196,11 @@ class ModeloPredictivo:
         # Seleccionar modelo
         if modelo == 'random_forest':
             parametros = {
-                'n_estimators': 100,
-                'max_depth': 10,
+                'n_estimators': 200,
+                'max_depth': 15,
                 'min_samples_split': 5,
-                'min_samples_leaf': 2,
+                'class_weight': 'balanced',
                 'random_state': 0,
-                'n_jobs': -1
             }
             # Actualizar con hiperparámetros proporcionados
             parametros.update(hiperparametros)
@@ -226,6 +225,9 @@ class ModeloPredictivo:
             }
             parametros.update(hiperparametros)
             self.modelo = GradientBoostingClassifier(**parametros)
+        elif modelo == 'naiveBayes':
+            
+            self.modelo = GaussianNB()
             
         else:
             print(f"Modelo '{modelo}' no reconocido")
@@ -445,7 +447,7 @@ if __name__ == "__main__":
     modelo.preparar_datos_clasificacion()
     
     # Entrenar modelo
-    modelo.entrenar_modelo_clasificacion(modelo='gradient_boosting')
+    modelo.entrenar_modelo_clasificacion(modelo='random_forest')
     
     # Evaluar modelo
     resultado = modelo.evaluar_modelo()
