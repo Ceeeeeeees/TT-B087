@@ -502,7 +502,7 @@ class AnalisisExploratorio:
         plt.tight_layout()
         plt.show()
     
-    def analizar_outliers(self, variables=None, df_tipo='continuo', metodo='zscore', 
+    def analizar_outliers(self, variables=None, df_tipo='continuo', metodo='iqr', 
                          umbral=3, graficar=True):
         """
         Identifica valores atípicos (outliers) en las variables seleccionadas.

@@ -101,6 +101,37 @@ class ModeloPredictivo:
             'distribucion': distribucion if 'rendimiento_general_categoria' in self.datos.columns else None
         }
     
+    def detectar_outliers(self):
+        """
+        Detecta outliers en las variables numéricas del dataset.
+        
+        Returns:
+            dict: Diccionario con los outliers detectados
+        """
+        if self.datos is None:
+            print("No hay datos cargados. Llame primero a cargar_datos()")
+            return None
+        
+        # Seleccionar solo columnas numéricas
+        numericas = self.datos.select_dtypes(include=['int64', 'float64'])
+        
+        # Detectar outliers usando el método IQR
+        outliers = {}
+        for col in numericas.columns:
+            Q1 = numericas[col].quantile(0.25)
+            Q3 = numericas[col].quantile(0.75)
+            IQR = Q3 - Q1
+            limite_inferior = Q1 - 1.5 * IQR
+            limite_superior = Q3 + 1.5 * IQR
+            
+            outliers[col] = numericas[(numericas[col] < limite_inferior) | (numericas[col] > limite_superior)]
+        
+        print("Outliers detectados:")
+        for col, df_outliers in outliers.items():
+            print(f"{col}: {df_outliers.shape[0]} outliers")
+        
+        return outliers
+    
     def analizar_correlaciones(self):
         """
         Analiza las correlaciones entre las variables numéricas.
@@ -150,13 +181,13 @@ class ModeloPredictivo:
             return None
         
         # Excluir variables que no deben ser predictores
-        excluir = ['id_alumno', variable_objetivo, 'rendimiento_general', 'matematicas', 'comprension_lectora', 'ciencias', 'matematicasCategoria' , 'comprension_lectoraCategoria', 'cienciasCategoria', 'indice_socioeconomicoCategoria']
+        excluir = ['id_alumno', variable_objetivo, 'rendimiento_general', 'matematicas', 'comprension_lectora', 'ciencias', 'matematicasCategoria' , 'comprension_lectoraCategoria', 'cienciasCategoria', 'indice_socioeconomico']
         predictores = [col for col in self.datos.columns if col not in excluir]
         
         # Convertir variables categóricas a dummy si existen
         categoricas = [col for col in predictores if self.datos[col].dtype == 'object']
         if categoricas:
-            self.datos = pd.get_dummies(self.datos, columns=categoricas, drop_first=True)
+            self.datos = pd.get_dummies(self.datos, columns=categoricas, drop_first=False)
             # Actualizar lista de predictores después de crear variables dummy
             predictores = [col for col in self.datos.columns if col not in excluir]
         
@@ -171,6 +202,8 @@ class ModeloPredictivo:
         
         print(f"Datos preparados: {self.X_train.shape[0]} muestras de entrenamiento, {self.X_test.shape[0]} muestras de prueba")
         print(f"Variables predictoras: {len(predictores)}")
+        print(f"Variables predictoras: {predictores}")
+        print(f"Variable objetivo: {variable_objetivo}")
         
         return self.X_train, self.X_test, self.y_train, self.y_test
     
@@ -195,10 +228,20 @@ class ModeloPredictivo:
         
         # Seleccionar modelo
         if modelo == 'random_forest':
+            class_weights = {
+    'Alto': 1.0,
+    'Bajo': 1.0,
+    'Medio': 2.0  # Mayor peso para la clase con peor rendimiento
+}
+
             parametros = {
-                'n_estimators': 200,
-                'max_depth': 15,
-                'min_samples_split': 5,
+                'n_estimators': 1000,
+                'max_depth': None,
+                'min_samples_split': 50,
+                'min_samples_leaf': 50,
+                'max_features': None,
+                'bootstrap': False,
+                'criterion': 'entropy',
                 'class_weight': 'balanced',
                 'random_state': 0,
             }
@@ -338,7 +381,7 @@ class ModeloPredictivo:
             return None
         
         # Configurar estratificación para mantener proporciones de clases
-        skf = StratifiedKFold(n_splits=cv, shuffle=True, random_state=42)
+        skf = StratifiedKFold(n_splits=cv, shuffle=True, random_state=0)
         
         # Realizar validación cruzada
         cv_scores = cross_val_score(self.modelo, self.X, self.y, cv=skf, scoring='accuracy')
@@ -434,7 +477,7 @@ class ModeloPredictivo:
 # Ejemplo de uso
 if __name__ == "__main__":
     # Crear instancia del modelo
-    modelo = ModeloPredictivo("../ETL/Transformar/alumnosMexico2022ProcesadosCategoricos.csv")
+    modelo = ModeloPredictivo("../ETL/Transformar/alumnos_balanceados_smotetomek.csv")
     
     # Cargar y explorar datos
     modelo.cargar_datos()
@@ -455,10 +498,22 @@ if __name__ == "__main__":
     # Mostrar importancia de variables
     importancia = modelo.importancia_variables()
     print("Top 10 variables más importantes:")
-    print(importancia.head(10))
+    print(importancia.head(20))
     
     # Realizar validación cruzada
     cv_resultados = modelo.validacion_cruzada(cv=5)
     
     # Guardar modelo
-    modelo.guardar_modelo("modelo_rendimiento_academico.pkl")
+    #modelo.guardar_modelo("modelo_rendimiento_academico.pkl")
+
+    # Realizar con otro archivo
+    modelo2 = ModeloPredictivo("../ETL/Transformar/alumnos_balanceados_smoteenn.csv")
+    modelo2.cargar_datos()
+    modelo2.preparar_datos_clasificacion()
+    modelo2.entrenar_modelo_clasificacion(modelo='decision_tree')
+    modelo2.evaluar_modelo()
+    modelo2.importancia_variables()
+    importancia = modelo2.importancia_variables()
+    print("Top 10 variables más importantes:")
+    print(importancia.head(20))
+    modelo2.validacion_cruzada(cv=5)
