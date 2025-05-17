@@ -8,6 +8,11 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 import joblib
+import xgboost as xgb
+from sklearn.preprocessing import StandardScaler, PolynomialFeatures
+from sklearn.compose import ColumnTransformer
+import lightgbm as lgb
+from sklearn.pipeline import Pipeline
 
 class ModeloPredictivo:
     """
@@ -207,6 +212,108 @@ class ModeloPredictivo:
         
         return self.X_train, self.X_test, self.y_train, self.y_test
     
+    def preparar_datos_con_transformacion(self, variable_objetivo='rendimiento_general_categoria', 
+                                    test_size=0.30, random_state=0,
+                                    aplicar_polinomicas=True, 
+                                    aplicar_interacciones=True,
+                                    aplicar_normalizacion=True):
+        """
+        Prepara los datos aplicando transformaciones avanzadas sin eliminar variables.
+        
+        Args:
+            variable_objetivo (str): Nombre de la columna objetivo
+            test_size (float): Proporción del conjunto de prueba
+            random_state (int): Semilla para reproducibilidad
+            aplicar_polinomicas (bool): Si se deben crear características polinómicas
+            aplicar_interacciones (bool): Si se deben crear interacciones entre variables
+            aplicar_normalizacion (bool): Si se deben normalizar variables numéricas
+                
+        Returns:
+            tuple: (X_train_transformed, X_test_transformed, y_train, y_test)
+        """
+        
+        if self.datos is None:
+            print("No hay datos cargados. Llame primero a cargar_datos()")
+            return None
+        
+        if variable_objetivo not in self.datos.columns:
+            print(f"La variable objetivo '{variable_objetivo}' no está en el dataset")
+            return None
+        
+        # Excluir variables que no deben ser predictores
+        excluir = ['id_alumno', variable_objetivo, 'rendimiento_general', 'matematicas', 
+                'comprension_lectora', 'ciencias', 'matematicasCategoria', 
+                'comprension_lectoraCategoria', 'cienciasCategoria', 'indice_socioeconomico']
+        predictores = [col for col in self.datos.columns if col not in excluir]
+        
+        # Identificar tipos de columnas
+        X = self.datos[predictores]
+        y = self.datos[variable_objetivo]
+        
+        # Dividir en conjuntos de entrenamiento y prueba
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=test_size, random_state=random_state, stratify=y
+        )
+        
+        # Guardar las columnas originales para el modelo
+        self.X = X
+        self.y = y
+        self.X_train = X_train
+        self.X_test = X_test
+        self.y_train = y_train
+        self.y_test = y_test
+        
+        # Identificar columnas numéricas y categóricas
+        num_cols = X.select_dtypes(include=['int64', 'float64']).columns.tolist()
+        cat_cols = X.select_dtypes(include=['object', 'category']).columns.tolist()
+        
+        # Crear pipeline de transformaciones
+        transformers = []
+        
+        # Pipeline para variables numéricas
+        num_steps = []
+        if aplicar_normalizacion:
+            num_steps.append(('scaler', StandardScaler()))
+        if aplicar_polinomicas:
+            num_steps.append(('poly', PolynomialFeatures(degree=2, interaction_only=aplicar_interacciones,
+                                                include_bias=False)))
+        
+        if num_steps:
+            transformers.append(('num', Pipeline(steps=num_steps), num_cols))
+        
+        # Si hay transformaciones que aplicar, crear el ColumnTransformer
+        if transformers:
+            preprocessor = ColumnTransformer(
+                transformers=transformers,
+                remainder='passthrough'  # Mantener variables no transformadas
+            )
+            
+            # Aplicar transformaciones
+            X_train_transformed = preprocessor.fit_transform(X_train)
+            X_test_transformed = preprocessor.transform(X_test)
+            
+            # Guardar el preprocesador para futuras transformaciones
+            self.preprocessor = preprocessor
+            
+            # Si las transformaciones generan una matriz numpy, convertir a DataFrame
+            if isinstance(X_train_transformed, np.ndarray):
+                # Obtener nombres de características transformadas
+                if hasattr(preprocessor, 'get_feature_names_out'):
+                    feature_names = preprocessor.get_feature_names_out()
+                else:
+                    # Fallback para versiones anteriores de sklearn
+                    feature_names = [f"feature_{i}" for i in range(X_train_transformed.shape[1])]
+                
+                X_train_transformed = pd.DataFrame(X_train_transformed, columns=feature_names)
+                X_test_transformed = pd.DataFrame(X_test_transformed, columns=feature_names)
+            
+            print(f"Datos transformados: {X_train_transformed.shape[1]} características creadas")
+            
+            return X_train_transformed, X_test_transformed, y_train, y_test
+        else:
+            print("No se aplicaron transformaciones. Utilizando variables originales.")
+            return X_train, X_test, y_train, y_test
+    
     def entrenar_modelo_clasificacion(self, modelo='random_forest', hiperparametros=None):
         """
         Entrena un modelo de clasificación con los datos preparados.
@@ -283,6 +390,184 @@ class ModeloPredictivo:
         
         return self.modelo
     
+    def entrenar_modelo_avanzado(self, modelo='xgboost', hiperparametros=None, manejar_categoricas='auto'):
+        """
+        Entrena un modelo avanzado que maneja naturalmente la importancia de características.
+        
+        Args:
+            modelo (str): Tipo de modelo avanzado ('xgboost', 'lightgbm', 'catboost', 'stacking')
+            hiperparametros (dict): Hiperparámetros para el modelo seleccionado
+            manejar_categoricas (str): Cómo manejar variables categóricas ('auto', 'convert', 'enable')
+                
+        Returns:
+            object: Modelo entrenado
+        """
+        if self.X_train is None or self.y_train is None:
+            print("Datos no preparados. Llame primero a preparar_datos_clasificacion()")
+            return None
+        
+        # Configurar hiperparámetros por defecto si no se proporcionan
+        if hiperparametros is None:
+            hiperparametros = {}
+        
+        # Verificar si hay columnas categóricas
+        columnas_categoricas = self.X_train.select_dtypes(include=['object', 'category']).columns.tolist()
+        if columnas_categoricas:
+            print(f"Detectadas {len(columnas_categoricas)} columnas categóricas: {columnas_categoricas}")
+            
+            # Convertir columnas categóricas según la estrategia elegida
+            if manejar_categoricas == 'convert' or (manejar_categoricas == 'auto' and modelo != 'catboost'):
+                print("Convirtiendo columnas categóricas a numéricas (one-hot encoding)...")
+                
+                # Guardar una copia del DataFrame original
+                X_train_original = self.X_train.copy()
+                X_test_original = self.X_test.copy()
+                
+                # Aplicar one-hot encoding
+                from sklearn.preprocessing import OneHotEncoder
+                from sklearn.compose import ColumnTransformer
+                
+                # Preparar transformer
+                transformer = ColumnTransformer(
+                    transformers=[
+                        ('cat', OneHotEncoder(sparse_output=False, handle_unknown='ignore'), columnas_categoricas)
+                    ],
+                    remainder='passthrough'
+                )
+                
+                # Ajustar y transformar
+                self.X_train = transformer.fit_transform(self.X_train)
+                self.X_test = transformer.transform(self.X_test)
+                
+                # Obtener nuevos nombres de columnas
+                nombres_columnas = []
+                
+                # Primero las columnas one-hot encoded
+                for i, nombre in enumerate(columnas_categoricas):
+                    categorias = transformer.transformers_[0][1].categories_[i]
+                    for cat in categorias:
+                        nombres_columnas.append(f"{nombre}_{cat}")
+                
+                # Luego las columnas numéricas originales
+                columnas_numericas = X_train_original.select_dtypes(exclude=['object', 'category']).columns.tolist()
+                nombres_columnas.extend(columnas_numericas)
+                
+                # Convertir a DataFrame
+                self.X_train = pd.DataFrame(self.X_train, columns=nombres_columnas)
+                self.X_test = pd.DataFrame(self.X_test, columns=nombres_columnas)
+                
+                print(f"Datos transformados: de {len(X_train_original.columns)} a {len(self.X_train.columns)} columnas")
+        
+        # Convertir etiquetas de clase a numéricas si son strings
+        from sklearn.preprocessing import LabelEncoder
+        
+        # Verificar si las etiquetas son strings
+        if self.y_train.dtype == 'object' or pd.api.types.is_categorical_dtype(self.y_train):
+            print("Convirtiendo etiquetas de clase a valores numéricos...")
+            self.label_encoder = LabelEncoder()
+            y_train_encoded = self.label_encoder.fit_transform(self.y_train)
+            y_test_encoded = self.label_encoder.transform(self.y_test)
+            
+            # Guardar mapeo para referencia
+            self.class_mapping = dict(zip(self.label_encoder.classes_, range(len(self.label_encoder.classes_))))
+            print(f"Mapeo de clases: {self.class_mapping}")
+        else:
+            # Ya son numéricas
+            y_train_encoded = self.y_train
+            y_test_encoded = self.y_test
+            self.label_encoder = None
+        
+        # Verificar clases únicas para configuraciones específicas
+        clases_unicas = np.unique(y_train_encoded)
+        num_clases = len(clases_unicas)
+        
+        try:
+            if modelo == 'xgboost':
+                import xgboost as xgb
+                
+                # Configuración base para multiclase o binario
+                parametros = {
+                    'objective': 'multi:softprob' if num_clases > 2 else 'binary:logistic',
+                    'num_class': num_clases if num_clases > 2 else None,
+                    'learning_rate': 0.05,
+                    'max_depth': 6,
+                    'min_child_weight': 1,
+                    'gamma': 0,
+                    'subsample': 0.8,
+                    'colsample_bytree': 0.8,
+                    'reg_alpha': 0,
+                    'reg_lambda': 1,
+                    'scale_pos_weight': 1,
+                    'random_state': 42,
+                    'eval_metric': 'mlogloss' if num_clases > 2 else 'logloss'
+                }
+                
+                # Si hay columnas categóricas y elegimos habilitarlas
+                if columnas_categoricas and manejar_categoricas == 'enable':
+                    parametros['enable_categorical'] = True
+                
+                # Eliminar parámetros no necesarios para binario
+                if num_clases <= 2:
+                    parametros.pop('num_class')
+                
+                # Actualizar con hiperparámetros proporcionados
+                parametros.update(hiperparametros)
+                
+                # Filtrar None values (XGBoost no los acepta)
+                parametros = {k: v for k, v in parametros.items() if v is not None}
+                    
+                self.modelo = xgb.XGBClassifier(**parametros)
+            
+            elif modelo == 'lightgbm':
+                import lightgbm as lgb
+                
+                parametros = {
+                    'objective': 'multiclass' if num_clases > 2 else 'binary',
+                    'num_class': num_clases if num_clases > 2 else None,
+                    'learning_rate': 0.05,
+                    'num_leaves': 31,
+                    'max_depth': -1,  # -1 significa sin límite
+                    'min_child_samples': 20,
+                    'subsample': 0.8,
+                    'colsample_bytree': 0.8,
+                    'reg_alpha': 0,
+                    'reg_lambda': 1,
+                    'random_state': 42,
+                    'verbose': -1
+                }
+                
+                # Si hay columnas categóricas, agregar sus índices
+                if columnas_categoricas and manejar_categoricas != 'convert':
+                    parametros['categorical_feature'] = columnas_categoricas
+                
+                # Eliminar parámetros no necesarios para binario
+                if num_clases <= 2:
+                    parametros.pop('num_class')
+                    
+                # Actualizar con hiperparámetros proporcionados
+                parametros.update(hiperparametros)
+                
+                # Filtrar None values
+                parametros = {k: v for k, v in parametros.items() if v is not None}
+                    
+                self.modelo = lgb.LGBMClassifier(**parametros)
+            
+            # Resto del código igual que antes...
+                
+            # Entrenar modelo
+            if modelo != 'catboost':
+                print(f"Entrenando modelo {modelo}...")
+                self.modelo.fit(self.X_train, y_train_encoded)
+                print("Modelo entrenado exitosamente")
+            
+            return self.modelo
+            
+        except ImportError as e:
+            print(f"Error: La librería para {modelo} no está instalada.")
+            print(f"Instale con: pip install {modelo}")
+            print(f"Error específico: {e}")
+            return None
+    
     def evaluar_modelo(self):
         """
         Evalúa el rendimiento del modelo en el conjunto de prueba.
@@ -294,8 +579,20 @@ class ModeloPredictivo:
             print("No hay modelo entrenado. Llame primero a entrenar_modelo_clasificacion()")
             return None
         
+        # Verificar si se usó un codificador de etiquetas
+        if hasattr(self, 'label_encoder') and self.label_encoder is not None:
+            y_test_encoded = self.label_encoder.transform(self.y_test)
+        else:
+            y_test_encoded = self.y_test
+        
         # Predecir en conjunto de prueba
-        y_pred = self.modelo.predict(self.X_test)
+        y_pred_encoded = self.modelo.predict(self.X_test)
+        
+        # Convertir predicciones a etiquetas originales si se usó un codificador
+        if hasattr(self, 'label_encoder') and self.label_encoder is not None:
+            y_pred = self.label_encoder.inverse_transform(y_pred_encoded)
+        else:
+            y_pred = y_pred_encoded
         
         # Calcular métricas
         accuracy = accuracy_score(self.y_test, y_pred)
@@ -316,8 +613,8 @@ class ModeloPredictivo:
         # Visualizar matriz de confusión
         plt.figure(figsize=(10, 8))
         sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
-                   xticklabels=np.unique(self.y_test),
-                   yticklabels=np.unique(self.y_test))
+                xticklabels=np.unique(self.y_test),
+                yticklabels=np.unique(self.y_test))
         plt.xlabel('Predicción')
         plt.ylabel('Valor Real')
         plt.title('Matriz de Confusión')
@@ -362,6 +659,127 @@ class ModeloPredictivo:
         
         return df_importancias
     
+    def visualizar_importancia_avanzada(self, metodo='permutacion'):
+        """
+        Visualiza la importancia de las variables utilizando diferentes técnicas
+        sin eliminar ninguna variable.
+        
+        Args:
+            metodo (str): Método para calcular importancia ('permutacion', 'shap', 'ambos')
+                
+        Returns:
+            pandas.DataFrame: Importancia de cada variable según el método elegido
+        """
+        if self.modelo is None:
+            print("No hay modelo entrenado. Entrene primero un modelo.")
+            return None
+        
+        # Crear figura para múltiples gráficos
+        fig, axes = plt.subplots(1, 2 if metodo == 'ambos' else 1, figsize=(20, 10))
+        
+        # Dataframe para almacenar resultados
+        importancias_df = pd.DataFrame({'Variable': self.X.columns})
+        
+        # 1. Importancia por permutación (funciona con cualquier modelo)
+        if metodo in ['permutacion', 'ambos']:
+            from sklearn.inspection import permutation_importance
+            
+            print("Calculando importancia por permutación...")
+            # Realizar 10 permutaciones aleatorias para cada característica
+            result = permutation_importance(
+                self.modelo, self.X_test, self.y_test, 
+                n_repeats=10, random_state=42, n_jobs=-1
+            )
+            
+            # Almacenar resultados
+            perm_importancia = result.importances_mean
+            perm_std = result.importances_std
+            
+            # Añadir al dataframe
+            importancias_df['Importancia_Permutacion'] = perm_importancia
+            importancias_df['Std_Permutacion'] = perm_std
+            
+            # Ordenar por importancia
+            df_perm = importancias_df.sort_values('Importancia_Permutacion', ascending=False)
+            
+            # Visualizar
+            ax = axes if metodo != 'ambos' else axes[0]
+            sns.barplot(x='Importancia_Permutacion', y='Variable', data=df_perm.head(15), ax=ax)
+            ax.set_title('Importancia por Permutación')
+            ax.set_xlabel('Reducción en rendimiento al permutar')
+            ax.set_ylabel('Variable')
+            
+            print("Top 15 variables por importancia de permutación:")
+            print(df_perm.head(15)[['Variable', 'Importancia_Permutacion']])
+        
+        # 2. SHAP Values (para modelos basados en árboles)
+        if metodo in ['shap', 'ambos'] and hasattr(self.modelo, 'predict_proba'):
+            try:
+                import shap
+                
+                print("Calculando valores SHAP...")
+                # Crear explicador SHAP
+                if hasattr(self.modelo, 'estimators_'):  # Para modelos de ensemble
+                    explainer = shap.TreeExplainer(self.modelo)
+                else:
+                    explainer = shap.Explainer(self.modelo)
+                    
+                # Calcular valores SHAP para una muestra del conjunto de prueba
+                n_samples = min(500, self.X_test.shape[0])  # Limitar a 500 muestras para velocidad
+                shap_values = explainer.shap_values(self.X_test.iloc[:n_samples])
+                
+                # Para modelos de clasificación multiclase
+                if isinstance(shap_values, list):
+                    # Promedio a través de todas las clases
+                    mean_abs_shap = np.mean([np.abs(shap_values[i]).mean(0) for i in range(len(shap_values))], axis=0)
+                else:
+                    mean_abs_shap = np.abs(shap_values).mean(0)
+                
+                # Añadir al dataframe
+                importancias_df['Importancia_SHAP'] = mean_abs_shap
+                
+                # Ordenar por importancia SHAP
+                df_shap = importancias_df.sort_values('Importancia_SHAP', ascending=False)
+                
+                # Visualizar
+                ax = axes if metodo != 'ambos' else axes[1]
+                sns.barplot(x='Importancia_SHAP', y='Variable', data=df_shap.head(15), ax=ax)
+                ax.set_title('Importancia por valores SHAP')
+                ax.set_xlabel('Impacto promedio en la predicción (|SHAP|)')
+                ax.set_ylabel('Variable')
+                
+                print("\nTop 15 variables por importancia SHAP:")
+                print(df_shap.head(15)[['Variable', 'Importancia_SHAP']])
+                
+                # Guardar gráfico SHAP adicional
+                plt.figure(figsize=(12, 8))
+                shap.summary_plot(shap_values, self.X_test.iloc[:n_samples], plot_type='bar', show=False)
+                plt.tight_layout()
+                plt.savefig('shap_importancia.png')
+                plt.close()
+                
+            except ImportError:
+                print("La librería SHAP no está instalada. Instálela con 'pip install shap'")
+                if metodo == 'shap':
+                    return df_perm if 'df_perm' in locals() else None
+        
+        # Ajustar diseño y guardar gráfico
+        plt.tight_layout()
+        plt.savefig('importancia_avanzada.png')
+        plt.close()
+        
+        # Retornar DataFrame con ambas importancias si están disponibles
+        if metodo == 'ambos' and 'Importancia_SHAP' in importancias_df.columns:
+            return pd.merge(
+                df_perm[['Variable', 'Importancia_Permutacion']], 
+                df_shap[['Variable', 'Importancia_SHAP']],
+                on='Variable'
+            ).sort_values('Importancia_Permutacion', ascending=False)
+        elif metodo == 'shap' and 'Importancia_SHAP' in importancias_df.columns:
+            return df_shap
+        else:
+            return df_perm
+
     def validacion_cruzada(self, cv=5):
         """
         Realiza validación cruzada para evaluar el modelo.
@@ -472,11 +890,14 @@ class ModeloPredictivo:
         except Exception as e:
             print(f"Error al realizar predicciones: {e}")
             return None
+        
+    
 
 
 # Ejemplo de uso
 if __name__ == "__main__":
-    # Crear instancia del modelo
+    
+
     modelo = ModeloPredictivo("../ETL/Transformar/alumnos_balanceados_smotetomek.csv")
     
     # Cargar y explorar datos
@@ -486,34 +907,15 @@ if __name__ == "__main__":
     # Analizar correlaciones
     modelo.analizar_correlaciones()
     
-    # Preparar datos para clasificación
-    modelo.preparar_datos_clasificacion()
+    # Preparar datos con transformaciones avanzadas
+    modelo.preparar_datos_con_transformacion(aplicar_polinomicas=True, aplicar_interacciones=True)
     
-    # Entrenar modelo
-    modelo.entrenar_modelo_clasificacion(modelo='random_forest')
+    # Entrenar modelo avanzado
+    modelo.entrenar_modelo_avanzado(modelo='xgboost')
     
     # Evaluar modelo
     resultado = modelo.evaluar_modelo()
     
-    # Mostrar importancia de variables
-    importancia = modelo.importancia_variables()
-    print("Top 10 variables más importantes:")
-    print(importancia.head(20))
+    # Generar informe completo para dashboard
     
-    # Realizar validación cruzada
-    cv_resultados = modelo.validacion_cruzada(cv=5)
-    
-    # Guardar modelo
-    #modelo.guardar_modelo("modelo_rendimiento_academico.pkl")
-
-    # Realizar con otro archivo
-    modelo2 = ModeloPredictivo("../ETL/Transformar/alumnos_balanceados_smoteenn.csv")
-    modelo2.cargar_datos()
-    modelo2.preparar_datos_clasificacion()
-    modelo2.entrenar_modelo_clasificacion(modelo='decision_tree')
-    modelo2.evaluar_modelo()
-    modelo2.importancia_variables()
-    importancia = modelo2.importancia_variables()
-    print("Top 10 variables más importantes:")
-    print(importancia.head(20))
-    modelo2.validacion_cruzada(cv=5)
+    #modelo.validacion_cruzada(cv=5)
